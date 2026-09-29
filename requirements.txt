@@ -1,0 +1,7 @@
+opencv-python>=4.8.0
+ultralytics>=8.0.0
+flask>=2.2.0
+flask-cors>=3.0.0
+qrcode>=7.4.2
+pillow>=9.0.0
+numpy>=1.22.0
