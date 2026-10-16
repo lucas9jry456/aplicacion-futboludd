@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Futbol AI Tracker - Análisis Táctico y Grabación</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Optimización de aceleración para 60 FPS */
+        canvas, video {
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans select-none antialiased bg-slate-950 pb-20 md:pb-0">
+
+    <!-- HEADER SUPERIOR -->
+    <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-950">
+                <i data-lucide="activity" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
+                    Futbol AI Tracker
+                    <span class="text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30">PRO</span>
+                </h1>
+                <p class="text-[11px] text-slate-400 hidden sm:block">Seguimiento Real, Análisis en Vivo y Marcador</p>
+            </div>
+        </div>
+
+        <!-- NAVEGACIÓN DESKTOP -->
+        <nav class="hidden md:flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+            <button data-tab-target="video" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow-md transition">
+                <i data-lucide="play-square" class="w-4 h-4"></i>
+                <span>Video y Análisis</span>
+            </button>
+            <button data-tab-target="saved" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition">
+                <i data-lucide="folder-search" class="w-4 h-4"></i>
+                <span>Videos Guardados</span>
+            </button>
+            <button data-tab-target="feedback" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition">
+                <i data-lucide="clipboard-check" class="w-4 h-4"></i>
+                <span>Formulario de Evaluación</span>
+            </button>
+        </nav>
+
+        <!-- INDICADORES EN VIVO -->
+        <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-1 px-2.5 py-1 bg-emerald-950/60 border border-emerald-800/40 rounded-full text-[11px] text-emerald-300">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="font-semibold hidden sm:inline">Google Sheets Conectado</span>
+            </div>
+            <div id="camera-status-indicator" class="hidden flex items-center space-x-1.5 px-2.5 py-1 bg-red-950/70 border border-red-800/60 rounded-full text-[11px] text-red-300">
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                <span class="font-semibold">EN VIVO</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <main class="flex-1 overflow-y-auto p-3 sm:p-5 max-w-7xl mx-auto w-full">
+
+        <!-- ============================================== -->
+        <!-- PESTAÑA 1: VIDEO Y ANÁLISIS                    -->
+        <!-- ============================================== -->
+        <section id="tab-video" class="tab-content space-y-4">
+
+            <!-- CONTENEDOR DEL REPRODUCTOR DE VIDEO + CANVAS DE IA -->
+            <div class="relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group" id="video-container">
+                <div class="relative w-full aspect-video max-h-[62vh] flex items-center justify-center bg-slate-950">
+                    <!-- Video Nativo con Aceleración por Hardware -->
+                    <video id="main-video" class="w-full h-full object-contain" playsinline webkit-playsinline muted autoplay loop></video>
+                    <!-- Canvas de Superposición IA -->
+                    <canvas id="ai-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+                    <!-- Overlay: Replay Flotante -->
+                    <div id="replay-indicator" class="hidden absolute top-4 left-4 z-20 flex items-center space-x-2 px-3 py-1.5 bg-amber-500 text-slate-950 font-bold text-xs rounded-lg shadow-xl backdrop-blur animate-pulse">
+                        <i data-lucide="refresh-cw" class="w-4 h-4 animate-spin"></i>
+                        <span id="replay-title">Replay</span>
+                    </div>
+
+                    <!-- Overlay: Grabando badge -->
+                    <div id="recording-badge" class="hidden absolute top-4 right-4 z-20 flex items-center space-x-2 px-3 py-1.5 bg-red-600 text-white font-mono font-bold text-xs rounded-lg shadow-xl backdrop-blur">
+                        <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+                        <span>REC <span id="record-time-display">00:00</span></span>
+                    </div>
+
+                    <!-- Indicador si los overlays de IA están pausados/ocultos -->
+                    <div id="overlay-hidden-notice" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3 py-1 bg-slate-900/90 border border-slate-700 text-slate-300 text-xs rounded-full backdrop-blur flex items-center space-x-1.5">
+                        <i data-lucide="eye-off" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span>IA Oculta (Video limpio). Toca Play o "Mostrar IA" para reactivar.</span>
+                    </div>
+
+                    <!-- Fuente y Zona de cámara -->
+                    <div class="absolute bottom-3 left-3 z-10 flex items-center space-x-2">
+                        <span id="video-source-badge" class="px-2.5 py-1 bg-black/70 backdrop-blur rounded-lg border border-white/10 text-[11px] text-slate-300 font-medium">Cargando fuente...</span>
+                        <span id="zone-display-badge" class="px-2.5 py-1 bg-emerald-950/80 border border-emerald-700/60 rounded-lg text-[11px] text-emerald-300 font-bold">📍 Zona: Área Derecha</span>
+                    </div>
+                </div>
+
+                <!-- BARRA DE TIEMPO / TIMELINE INTERACTIVO PARA MOVER EL VIDEO A SU ANTOJO -->
+                <div class="px-4 py-2 bg-slate-950/90 border-t border-slate-800 flex items-center space-x-3">
+                    <span id="video-current-time" class="text-xs font-mono text-slate-300 w-12 text-right">00:00</span>
+                    <input type="range" id="video-scrubber" min="0" max="100" value="0" step="0.1" class="flex-1 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 transition">
+                    <span id="video-duration-time" class="text-xs font-mono text-slate-400 w-12">00:00</span>
+                </div>
+
+                <!-- BARRA DE CONTROLES COMPLETOS (PLAY, PAUSA, -5s, +5s, GOL, CAMARA) -->
+                <div class="p-3 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+                    
+                    <!-- Grupo 1: Controles de Reproducción y Salto Temporal -->
+                    <div class="flex items-center space-x-1.5">
+                        <!-- Retroceder 5 segundos -->
+                        <button id="btn-rewind-5s" title="Retroceder 5 segundos" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center space-x-1">
+                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                            <span class="text-[10px]">-5s</span>
+                        </button>
+
+                        <!-- Play / Pausa -->
+                        <button id="btn-play-pause" class="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition">
+                            <i data-lucide="pause" class="w-4 h-4"></i>
+                            <span id="play-pause-text">Pausar</span>
+                        </button>
+
+                        <!-- Avanzar 5 segundos -->
+                        <button id="btn-forward-5s" title="Avanzar 5 segundos" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center space-x-1">
+                            <span class="text-[10px]">+5s</span>
+                            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                        </button>
+
+                        <!-- Botón para alternar visibilidad de IA -->
+                        <button id="btn-toggle-ia-overlay" title="Mostrar u Ocultar Radar/Cajas" class="p-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center space-x-1">
+                            <i data-lucide="scan" class="w-4 h-4"></i>
+                            <span class="hidden sm:inline text-[11px]">IA</span>
+                        </button>
+                    </div>
+
+                    <!-- Grupo 2: Registro Rápido de Gol y Grabación -->
+                    <div class="flex items-center space-x-2">
+                        <!-- BOTÓN ¡GOL! -->
+                        <button id="btn-trigger-goal-modal" class="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 text-xs font-black rounded-xl transition shadow-lg shadow-amber-950/50">
+                            <i data-lucide="trophy" class="w-4 h-4"></i>
+                            <span>⚽ ¡GOL!</span>
+                        </button>
+
+                        <!-- Botón Grabar / Detener -->
+                        <button id="btn-record-toggle" class="flex items-center space-x-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-rose-950">
+                            <i data-lucide="circle-dot" class="w-4 h-4"></i>
+                            <span>Grabar</span>
+                        </button>
+
+                        <!-- Botón Guardar y Analizar -->
+                        <button id="btn-stop-and-analyze" class="flex items-center space-x-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-emerald-950">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span class="hidden sm:inline">Finalizar y Analizar</span>
+                        </button>
+                    </div>
+
+                    <!-- Grupo 3: Fuente y Zona de Cancha -->
+                    <div class="flex items-center space-x-2 text-xs">
+                        <!-- Selector de Zona de Enfoque -->
+                        <div class="flex items-center space-x-1 bg-slate-950 px-2 py-1.5 rounded-xl border border-slate-700">
+                            <span class="text-slate-400 text-[11px]">Área:</span>
+                            <select id="select-camera-zone" class="bg-transparent text-emerald-400 font-bold text-xs focus:outline-none cursor-pointer">
+                                <option value="area_derecha" selected>Área Derecha (Ataque/Arco)</option>
+                                <option value="mitad">Mitad de Cancha</option>
+                                <option value="area_izquierda">Área Izquierda (Defensa/Arco)</option>
+                            </select>
+                        </div>
+
+                        <!-- Conectar Cámara -->
+                        <button id="btn-camera-toggle" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition" title="Conectar Cámara">
+                            <i data-lucide="camera" class="w-4 h-4"></i>
+                        </button>
+
+                        <!-- Girar Cámara Móvil -->
+                        <button id="btn-camera-flip" title="Cambiar cámara frontal/trasera" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition">
+                            <i data-lucide="flip-horizontal" class="w-4 h-4"></i>
+                        </button>
+
+                        <!-- Subir Video -->
+                        <label for="video-file-input" class="cursor-pointer p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition" title="Subir Video">
+                            <i data-lucide="upload" class="w-4 h-4"></i>
+                            <input type="file" id="video-file-input" accept="video/*" class="hidden">
+                        </label>
+
+                        <!-- Demo -->
+                        <button id="btn-demo-match" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl border border-slate-700 transition" title="Cargar Partido Demo">
+                            Demo
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- PANEL DE ESTADÍSTICAS TÁCTICAS Y MEJORES MOMENTOS -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                <!-- TABLERO DE ESTADÍSTICAS DEL PARTIDO CON MARCADOR DE GOLES -->
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+                    <div>
+                        <!-- MARCADOR DE GOLES PRINCIPAL -->
+                        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-3.5 h-3.5 rounded-full bg-blue-500"></div>
+                                <span class="text-sm font-black text-blue-400 uppercase">Equipo Azul</span>
+                            </div>
+                            <div class="flex items-center space-x-4 bg-slate-900 px-5 py-1.5 rounded-xl border border-slate-700">
+                                <span id="stat-a-goals" class="text-2xl font-black text-blue-400">0</span>
+                                <span class="text-xs font-bold text-slate-500">VS</span>
+                                <span id="stat-b-goals" class="text-2xl font-black text-red-400">0</span>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="text-sm font-black text-red-400 uppercase">Equipo Rojo</span>
+                                <div class="w-3.5 h-3.5 rounded-full bg-red-500"></div>
+                            </div>
+                        </div>
+
+                        <!-- Barra de Posesión de Balón -->
+                        <div>
+                            <div class="flex justify-between text-xs font-bold mb-1.5">
+                                <span class="text-blue-400">Equipo Azul: <span id="stat-a-pos">50%</span></span>
+                                <span class="text-slate-400 font-semibold text-[11px]">POSESIÓN</span>
+                                <span class="text-red-400">Equipo Rojo: <span id="stat-b-pos">50%</span></span>
+                            </div>
+                            <div class="w-full h-2.5 bg-red-600 rounded-full overflow-hidden flex shadow-inner">
+                                <div id="bar-pos-a" class="h-full bg-blue-600 transition-all duration-300" style="width: 50%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Grid de Métricas Tácticas Comparadas -->
+                        <div class="grid grid-cols-5 gap-2 mt-4 text-center">
+                            <div class="col-span-5 grid grid-cols-5 text-[11px] font-bold text-slate-400 border-b border-slate-800/80 pb-1">
+                                <div class="text-blue-400">AZUL</div>
+                                <div class="col-span-3 text-slate-300">ESTADÍSTICA</div>
+                                <div class="text-red-400">ROJO</div>
+                            </div>
+
+                            <!-- Pases Concretados -->
+                            <div id="stat-a-passes-comp" class="text-base font-extrabold text-blue-400 bg-slate-950/60 py-1.5 rounded-xl border border-blue-900/30">0</div>
+                            <div class="col-span-3 flex items-center justify-center text-xs font-semibold text-slate-200">
+                                ⚽ Pases Concretados
+                            </div>
+                            <div id="stat-b-passes-comp" class="text-base font-extrabold text-red-400 bg-slate-950/60 py-1.5 rounded-xl border border-red-900/30">0</div>
+
+                            <!-- Pases Fallados -->
+                            <div id="stat-a-passes-miss" class="text-base font-extrabold text-blue-400 bg-slate-950/60 py-1.5 rounded-xl border border-blue-900/30">0</div>
+                            <div class="col-span-3 flex items-center justify-center text-xs font-semibold text-slate-200">
+                                ❌ Pases Fallados
+                            </div>
+                            <div id="stat-b-passes-miss" class="text-base font-extrabold text-red-400 bg-slate-950/60 py-1.5 rounded-xl border border-red-900/30">0</div>
+
+                            <!-- Intercepciones -->
+                            <div id="stat-a-intercept" class="text-base font-extrabold text-blue-400 bg-slate-950/60 py-1.5 rounded-xl border border-blue-900/30">0</div>
+                            <div class="col-span-3 flex items-center justify-center text-xs font-semibold text-slate-200">
+                                🛡️ Intercepciones
+                            </div>
+                            <div id="stat-b-intercept" class="text-base font-extrabold text-red-400 bg-slate-950/60 py-1.5 rounded-xl border border-red-900/30">0</div>
+
+                            <!-- Tiros al Arco -->
+                            <div id="stat-a-shots" class="text-base font-extrabold text-blue-400 bg-slate-950/60 py-1.5 rounded-xl border border-blue-900/30">0</div>
+                            <div class="col-span-3 flex items-center justify-center text-xs font-semibold text-slate-200">
+                                🎯 Tiros al Arco
+                            </div>
+                            <div id="stat-b-shots" class="text-base font-extrabold text-red-400 bg-slate-950/60 py-1.5 rounded-xl border border-red-900/30">0</div>
+
+                            <!-- Robos de Balón -->
+                            <div id="stat-a-steals" class="text-base font-extrabold text-blue-400 bg-slate-950/60 py-1.5 rounded-xl border border-blue-900/30">0</div>
+                            <div class="col-span-3 flex items-center justify-center text-xs font-semibold text-slate-200">
+                                ⚡ Robos de Balón
+                            </div>
+                            <div id="stat-b-steals" class="text-base font-extrabold text-red-400 bg-slate-950/60 py-1.5 rounded-xl border border-red-900/30">0</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                        <span>Seguimiento real por segmentación óptica</span>
+                        <span class="text-emerald-400 font-semibold">Fluidez Nativa 60 FPS</span>
+                    </div>
+                </div>
+
+                <!-- PANEL DE MEJORES MOMENTOS (HIGHLIGHTS) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col h-[420px]">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="star" class="w-5 h-5 text-amber-400 fill-amber-400"></i>
+                            <h2 class="text-sm font-bold uppercase tracking-wider text-white">Mejores Momentos</h2>
+                        </div>
+                        <span class="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 font-bold rounded-full border border-amber-500/30">REPLAYS</span>
+                    </div>
+
+                    <!-- Filtros de Jugadas -->
+                    <div class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-2 border-b border-slate-800/60 text-xs">
+                        <button data-hl-filter="todos" class="px-2.5 py-1 rounded-lg font-semibold bg-emerald-600 text-white whitespace-nowrap transition">Todos</button>
+                        <button data-hl-filter="gol" class="px-2.5 py-1 rounded-lg font-bold bg-amber-500/30 text-amber-300 hover:text-white whitespace-nowrap transition">⚽ Goles</button>
+                        <button data-hl-filter="tiro_arco" class="px-2.5 py-1 rounded-lg font-semibold bg-slate-800 text-slate-300 hover:text-white whitespace-nowrap transition">Tiros</button>
+                        <button data-hl-filter="intercepcion" class="px-2.5 py-1 rounded-lg font-semibold bg-slate-800 text-slate-300 hover:text-white whitespace-nowrap transition">Intercepciones</button>
+                        <button data-hl-filter="robo_balon" class="px-2.5 py-1 rounded-lg font-semibold bg-slate-800 text-slate-300 hover:text-white whitespace-nowrap transition">Robos</button>
+                    </div>
+
+                    <!-- Lista de Momentos -->
+                    <div id="highlights-container" class="flex-1 overflow-y-auto space-y-2 pt-2 pr-1">
+                        <!-- Generado dinámicamente -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- PESTAÑA 2: VIDEOS GUARDADOS                    -->
+        <!-- ============================================== -->
+        <section id="tab-saved" class="tab-content hidden space-y-4">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i>
+                        Biblioteca de Partidos Guardados
+                    </h2>
+                    <p class="text-xs text-slate-400">Busca entre tus videos, reproduce a tu antojo con controles completos o descarga</p>
+                </div>
+
+                <!-- Buscador en tiempo real -->
+                <div class="relative w-full sm:w-72">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+                    <input type="text" id="search-saved-videos" placeholder="Buscar por título o fecha..." class="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+            </div>
+
+            <!-- Grid de Videos Guardados -->
+            <div id="saved-videos-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- PESTAÑA 3: FORMULARIO DE EVALUACIÓN (GOOGLE SHEETS) -->
+        <!-- ============================================== -->
+        <section id="tab-feedback" class="tab-content hidden space-y-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                <!-- Formulario -->
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                        <div>
+                            <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                <i data-lucide="clipboard-check" class="w-5 h-5 text-emerald-400"></i>
+                                Evaluación de la Aplicación
+                            </h2>
+                            <p class="text-xs text-slate-400">Tus respuestas se guardan y se sincronizan directamente con tu Google Sheet</p>
+                        </div>
+                        <div class="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-950/60 border border-emerald-800/40 rounded-xl text-xs font-semibold text-emerald-300">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+                            <span>Google Sheet Vinculado</span>
+                        </div>
+                    </div>
+
+                    <form id="feedback-form" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Tu Nombre o Apodo (Opcional)</label>
+                                <input type="text" name="nombre" placeholder="Ej: Entrenador Carlos" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Tu Rol en el Fútbol</label>
+                                <select name="rol" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+                                    <option value="Entrenador">Director Técnico / Entrenador</option>
+                                    <option value="Analista">Analista Táctico / Scout</option>
+                                    <option value="Jugador">Jugador de Fútbol</option>
+                                    <option value="Aficionado">Aficionado / Espectador</option>
+                                    <option value="Desarrollador">Tester / Desarrollador</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Criterios con Estrellas (1-5) -->
+                        <div class="space-y-3 pt-2">
+                            <!-- 1. Fluidez del video -->
+                            <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                                <div>
+                                    <div class="text-xs font-semibold text-white">Fluidez de la Reproducción y Video</div>
+                                    <div class="text-[11px] text-slate-400">¿El video corrió sin tirones ni problemas a 60 FPS?</div>
+                                </div>
+                                <div class="star-rating-group flex items-center space-x-1">
+                                    <input type="hidden" name="rating_fluidez" value="5">
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- 2. Precisión IA -->
+                            <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                                <div>
+                                    <div class="text-xs font-semibold text-white">Seguimiento de Jugadores y Estadísticas IA</div>
+                                    <div class="text-[11px] text-slate-400">Pases concretados/fallados, intercepciones, tiros y robos</div>
+                                </div>
+                                <div class="star-rating-group flex items-center space-x-1">
+                                    <input type="hidden" name="rating_ia" value="5">
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- 3. Mejores Momentos -->
+                            <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                                <div>
+                                    <div class="text-xs font-semibold text-white">Calidad de los Mejores Momentos</div>
+                                    <div class="text-[11px] text-slate-400">Goles, tiros al arco y saltos al instante exacto</div>
+                                </div>
+                                <div class="star-rating-group flex items-center space-x-1">
+                                    <input type="hidden" name="rating_highlights" value="5">
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- 4. Experiencia Móvil y PC -->
+                            <div class="flex items-center justify-between bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                                <div>
+                                    <div class="text-xs font-semibold text-white">Facilidad de Uso en Celular y PC</div>
+                                    <div class="text-[11px] text-slate-400">Controles de video, scrubber y adaptación responsiva</div>
+                                </div>
+                                <div class="star-rating-group flex items-center space-x-1">
+                                    <input type="hidden" name="rating_usabilidad" value="5">
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                    <button type="button" class="star-btn p-1 text-amber-400 fill-amber-400"><i data-lucide="star" class="w-5 h-5"></i></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comentarios -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Comentarios, Ideas o Sugerencias</label>
+                            <textarea name="comentarios" rows="3" placeholder="¿Cómo sentiste la fluidez del video y el seguimiento de las jugadas?" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"></textarea>
+                        </div>
+
+                        <!-- Botón Enviar -->
+                        <button type="submit" class="w-full flex items-center justify-center space-x-2 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition shadow-lg shadow-emerald-950">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                            <span>Enviar Evaluación Directa a Google Sheet</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Historial de Evaluaciones -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col h-[520px]">
+                    <div class="border-b border-slate-800 pb-3 mb-2 flex items-center justify-between">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="history" class="w-4 h-4 text-emerald-400"></i>
+                            Evaluaciones Enviadas
+                        </h3>
+                        <span class="text-[10px] text-emerald-400 font-semibold">Sincronizado con Sheets</span>
+                    </div>
+
+                    <div id="feedback-history-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                        <!-- Llenado dinámico -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- NAVEGACIÓN INFERIOR PARA MÓVILES -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 border-t border-slate-800 backdrop-blur z-40 px-2 py-2 flex items-center justify-around">
+        <button data-tab-target="video" class="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-emerald-400 bg-slate-800/80 transition">
+            <i data-lucide="play-square" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium mt-1">Video</span>
+        </button>
+        <button data-tab-target="saved" class="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-slate-400 hover:text-white transition">
+            <i data-lucide="folder-search" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium mt-1">Guardados</span>
+        </button>
+        <button data-tab-target="feedback" class="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-slate-400 hover:text-white transition">
+            <i data-lucide="clipboard-check" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium mt-1">Evaluar</span>
+        </button>
+    </nav>
+
+    <!-- MODAL DE REGISTRO DE GOL (CON ANOTADOR Y ASISTIDOR) -->
+    <div id="goal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+        <div class="bg-slate-900 border border-amber-500/50 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl">⚽</span>
+                    <h3 class="text-base font-black text-amber-400 uppercase tracking-wider">¡Registrar Gol en Partido!</h3>
+                </div>
+                <button id="btn-close-goal-modal" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <!-- Equipo -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Equipo que Anotó:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="btn-goal-team-a" class="py-2.5 px-3 rounded-xl font-bold text-xs bg-blue-600 text-white border-2 border-blue-400 transition">
+                            Equipo Azul 🔵
+                        </button>
+                        <button type="button" id="btn-goal-team-b" class="py-2.5 px-3 rounded-xl font-bold text-xs bg-slate-800 text-slate-300 border-2 border-transparent transition">
+                            Equipo Rojo 🔴
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Nombre del Goleador -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre o Dorsal del Goleador:</label>
+                    <input type="text" id="goal-scorer-input" placeholder="Ej: Carlos #9, Messi, Delantero" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                </div>
+
+                <!-- Nombre del Asistidor -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre del Asistidor (Opcional):</label>
+                    <input type="text" id="goal-assistant-input" placeholder="Ej: Andrés #10 (o dejar vacío si fue jugada individual)" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                </div>
+
+                <!-- Zona de la Cancha -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Zona donde ocurrió el gol:</label>
+                    <select id="goal-zone-input" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold focus:outline-none">
+                        <option value="Área Derecha" selected>Área Derecha (Arco)</option>
+                        <option value="Mitad de Cancha">Tiro lejano / Mitad de Cancha</option>
+                        <option value="Área Izquierda">Área Izquierda (Arco)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                <button type="button" id="btn-cancel-goal" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition">
+                    Cancelar
+                </button>
+                <button type="button" id="btn-confirm-goal" class="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl transition shadow-lg shadow-amber-950">
+                    Guardar Gol en Mejores Momentos
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE ANÁLISIS DE IA PROFUNDO -->
+    <div id="analysis-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl text-center space-y-4">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <i data-lucide="cpu" class="w-7 h-7 animate-pulse"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-white">Analizando Partido con IA</h3>
+                <p id="analysis-status-message" class="text-xs text-slate-400 mt-1">Rastreando siluetas reales y evaluando jugadas...</p>
+            </div>
+
+            <div class="w-full bg-slate-950 rounded-full h-3 border border-slate-800 overflow-hidden">
+                <div id="analysis-progress-bar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full w-0 transition-all duration-150"></div>
+            </div>
+
+            <div class="text-xs font-mono text-emerald-400 font-bold" id="analysis-progress-text">0%</div>
+        </div>
+    </div>
+
+    <!-- TOAST DE NOTIFICACIONES FLOTANTE -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 text-sm font-medium translate-y-20 opacity-0 pointer-events-none">
+        <i data-lucide="check-circle" class="w-5 h-5 flex-shrink-0"></i>
+        <span id="toast-message">Mensaje</span>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="ai_tracker.js"></script>
+    <script src="app.js"></script>
+    <script>
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
